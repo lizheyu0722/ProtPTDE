@@ -6,7 +6,6 @@ import itertools
 import numpy as np
 import pandas as pd
 import datetime
-import logging
 import uuid
 
 from iterstrat.ml_stratifiers import MultilabelStratifiedShuffleSplit, MultilabelStratifiedKFold
@@ -19,10 +18,11 @@ with open("../config/config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
 # ---------------------------
-# Logging (Optuna-like style)
+# Logging (print-based, Optuna-like style)
 # ---------------------------
-logging.basicConfig(level=logging.INFO, format="[I %(asctime)s,%(msecs)03d] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-logger = logging.getLogger("optuna-like")
+def log_info(message: str):
+    now = datetime.datetime.now()
+    print(f"[I {now.strftime('%Y-%m-%d %H:%M:%S')},{now.microsecond // 1000:03d}] {message}")
 
 
 # ---------------------------
@@ -246,7 +246,7 @@ def objective(trial, random_seed):
                 best_loss = validation_loss_val
                 best_corr = test_corr_val
             elif optimizer.param_groups[0]["lr"] <= min_lr and epoch > warmup_epochs:
-                logger.info(f"[{models_name} | num_layer={num_layer} | max_lr={format_float_no_sci_no_trailzero(max_lr)} | seed={random_seed} | fold={k_fold_index}] " f"Stopping at epoch {epoch} due to no improvement in validation loss.")
+                log_info(f"[{models_name} | num_layer={num_layer} | max_lr={format_float_no_sci_no_trailzero(max_lr)} | seed={random_seed} | fold={k_fold_index}] " f"Stopping at epoch {epoch} due to no improvement in validation loss.")
                 break
 
         save_csv_no_sci_append(path=f"{file}/k_fold_index-{k_fold_index}_loss.csv", new_df=loss_df.reset_index().rename(columns={"index": "epoch"}), append=False)
@@ -315,7 +315,7 @@ def main(random_seed):
 
     # Optuna-like "study created" log
     study_name = f"no-name-{uuid.uuid4()}"
-    logger.info(f"A new study created in memory with name: {study_name}")
+    log_info(f"A new study created in memory with name: {study_name}")
 
     best_value = None
     best_trial_number = None
@@ -364,7 +364,7 @@ def main(random_seed):
             best_value = score_val
             best_trial_number = trial_number
         params_str = repr_params(mc, nl, lr)
-        logger.info(f"Trial {trial_number} finished with value: {format_float_no_sci_no_trailzero(score_val)} and parameters: {params_str}. " f"Best is trial {best_trial_number} with value: {format_float_no_sci_no_trailzero(best_value)}.")
+        log_info(f"Trial {trial_number} finished with value: {format_float_no_sci_no_trailzero(score_val)} and parameters: {params_str}. " f"Best is trial {best_trial_number} with value: {format_float_no_sci_no_trailzero(best_value)}.")
 
         new_rows.append({"number": trial_number, "value": score_val, "datetime_start": t_start.strftime("%Y-%m-%d %H:%M:%S.%f"), "datetime_complete": t_end.strftime("%Y-%m-%d %H:%M:%S.%f"), "duration": duration_str, "params_max_lr": lr, "params_model_combination": mc, "params_num_layer": nl, "system_attrs_grid_id": trial_number, "system_attrs_search_space": search_space_repr, "state": "COMPLETE"})
 
