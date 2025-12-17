@@ -61,21 +61,16 @@ def save_csv_no_sci_append(path: str, new_df: pd.DataFrame, append: bool, dedup_
 
 
 def repr_search_space(max_lr_list, model_combinations, num_layer_list) -> str:
-    """Stringify search space like Optuna, using non-scientific numbers."""
-    max_lr_str = "[" + ", ".join(format_float_no_sci_no_trailzero(x) for x in max_lr_list) + "]"
-    mc_str = "[" + ", ".join(f"'{mc}'" for mc in model_combinations) + "]"
-    nl_str = "[" + ", ".join(str(n) for n in num_layer_list) + "]"
-    return "{'max_lr': " + max_lr_str + ", 'model_combination': " + mc_str + ", 'num_layer': " + nl_str + "}"
-
-
-def fmt(x):
-    """Short alias for formatting in logs."""
-    return format_float_no_sci_no_trailzero(x)
+    """
+    Stringify the search space in Optuna style, with all numbers in non-scientific notation and a clear structure.
+    """
+    search_space = {"max_lr": [format_float_no_sci_no_trailzero(x) for x in max_lr_list],"model_combination": list(map(str, model_combinations)),"num_layer": list(map(int, num_layer_list)),}
+    return json.dumps(search_space, ensure_ascii=False).replace('"', "'")
 
 
 def repr_params(mc, nl, lr):
     """Mimic Optuna params dict in logs."""
-    return "{'model_combination': '" + mc + "', 'num_layer': " + str(nl) + ", 'max_lr': " + fmt(lr) + "}"
+    return f"{{'model_combination': '{mc}', 'num_layer': {nl}, 'max_lr': {format_float_no_sci_no_trailzero(lr)}}}"
 
 
 # ---------------------------
@@ -127,7 +122,7 @@ def objective(trial, random_seed):
     a score based on mean test correlation minus standard deviation for robust optimization.
 
     Args:
-        trial (optuna.Trial): Optuna trial object for hyperparameter suggestion
+        trial: Optuna-like trial object providing suggest_* methods
         random_seed (int): Random seed for reproducible results
 
     Returns:
@@ -174,7 +169,7 @@ def objective(trial, random_seed):
     mskf = MultilabelStratifiedKFold(n_splits=k_fold, shuffle=cv_shuffle, random_state=random_seed)
 
     for k_fold_index, (train_index, validation_index) in enumerate(mskf.split(y_mut_pos[train_validation_index], y_mut_pos[train_validation_index])):
-        train_csv = train_validation_csv.iloc[train_index].copy()
+        train_csv = train_validation_csv.iloc[train_index].copy() 
         validation_csv = train_validation_csv.iloc[validation_index].copy()
 
         train_dataset = BatchData(train_csv, selected_models)
@@ -251,7 +246,7 @@ def objective(trial, random_seed):
                 best_loss = validation_loss_val
                 best_corr = test_corr_val
             elif optimizer.param_groups[0]["lr"] <= min_lr and epoch > warmup_epochs:
-                logger.info(f"[{models_name} | num_layer={num_layer} | max_lr={fmt(max_lr)} | seed={random_seed} | fold={k_fold_index}] " f"Stopping at epoch {epoch} due to no improvement in validation loss.")
+                logger.info(f"[{models_name} | num_layer={num_layer} | max_lr={format_float_no_sci_no_trailzero(max_lr)} | seed={random_seed} | fold={k_fold_index}] " f"Stopping at epoch {epoch} due to no improvement in validation loss.")
                 break
 
         save_csv_no_sci_append(path=f"{file}/k_fold_index-{k_fold_index}_loss.csv", new_df=loss_df.reset_index().rename(columns={"index": "epoch"}), append=False)
@@ -369,7 +364,7 @@ def main(random_seed):
             best_value = score_val
             best_trial_number = trial_number
         params_str = repr_params(mc, nl, lr)
-        logger.info(f"Trial {trial_number} finished with value: {fmt(score_val)} and parameters: {params_str}. " f"Best is trial {best_trial_number} with value: {fmt(best_value)}.")
+        logger.info(f"Trial {trial_number} finished with value: {format_float_no_sci_no_trailzero(score_val)} and parameters: {params_str}. " f"Best is trial {best_trial_number} with value: {format_float_no_sci_no_trailzero(best_value)}.")
 
         new_rows.append({"number": trial_number, "value": score_val, "datetime_start": t_start.strftime("%Y-%m-%d %H:%M:%S.%f"), "datetime_complete": t_end.strftime("%Y-%m-%d %H:%M:%S.%f"), "duration": duration_str, "params_max_lr": lr, "params_model_combination": mc, "params_num_layer": nl, "system_attrs_grid_id": trial_number, "system_attrs_search_space": search_space_repr, "state": "COMPLETE"})
 
