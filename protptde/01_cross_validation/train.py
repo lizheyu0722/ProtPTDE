@@ -18,14 +18,6 @@ with open("../config/config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
 # ---------------------------
-# Logging (print-based, Optuna-like style)
-# ---------------------------
-def log_info(message: str):
-    now = datetime.datetime.now()
-    print(f"[I {now.strftime('%Y-%m-%d %H:%M:%S')},{now.microsecond // 1000:03d}] {message}")
-
-
-# ---------------------------
 # Helpers: number formatting
 # ---------------------------
 def format_float_no_sci_no_trailzero(x):
@@ -65,7 +57,7 @@ def repr_search_space(max_lr_list, model_combinations, num_layer_list) -> str:
     Stringify the search space in Optuna style, with all numbers in non-scientific notation and a clear structure.
     """
     search_space = {"max_lr": [format_float_no_sci_no_trailzero(x) for x in max_lr_list],"model_combination": list(map(str, model_combinations)),"num_layer": list(map(int, num_layer_list)),}
-    return json.dumps(search_space, ensure_ascii=False).replace('"', "'")
+    return json.dumps(search_space, ensure_ascii=False)
 
 
 def repr_params(mc, nl, lr):
@@ -246,7 +238,7 @@ def objective(trial, random_seed):
                 best_loss = validation_loss_val
                 best_corr = test_corr_val
             elif optimizer.param_groups[0]["lr"] <= min_lr and epoch > warmup_epochs:
-                log_info(f"[{models_name} | num_layer={num_layer} | max_lr={format_float_no_sci_no_trailzero(max_lr)} | seed={random_seed} | fold={k_fold_index}] " f"Stopping at epoch {epoch} due to no improvement in validation loss.")
+                print(f"[{models_name} | num_layer={num_layer} | max_lr={format_float_no_sci_no_trailzero(max_lr)} | seed={random_seed} | fold={k_fold_index}] " f"Stopping at epoch {epoch} due to no improvement in validation loss.")
                 break
 
         save_csv_no_sci_append(path=f"{file}/k_fold_index-{k_fold_index}_loss.csv", new_df=loss_df.reset_index().rename(columns={"index": "epoch"}), append=False)
@@ -315,7 +307,7 @@ def main(random_seed):
 
     # Optuna-like "study created" log
     study_name = f"no-name-{uuid.uuid4()}"
-    log_info(f"A new study created in memory with name: {study_name}")
+    print(f"A new study created in memory with name: {study_name}")
 
     best_value = None
     best_trial_number = None
@@ -344,19 +336,9 @@ def main(random_seed):
                     return self._nl_val
                 raise ValueError(f"Unexpected int param: {name}")
 
-        t_start = datetime.datetime.now()
+        
         score_val = objective(DummyTrial(mc, nl, lr), random_seed)
-        t_end = datetime.datetime.now()
-
-        delta = t_end - t_start
-        days = delta.days
-        secs = delta.seconds
-        micros = delta.microseconds
-        hours = secs // 3600
-        mins = (secs % 3600) // 60
-        secs_remain = secs % 60
-        duration_str = f"{days} days {hours:02d}:{mins:02d}:{secs_remain:02d}.{micros:06d}"
-
+        
         trial_number = next_number_base + i
 
         # Update best and log trial result (Optuna-like)
@@ -364,11 +346,11 @@ def main(random_seed):
             best_value = score_val
             best_trial_number = trial_number
         params_str = repr_params(mc, nl, lr)
-        log_info(f"Trial {trial_number} finished with value: {format_float_no_sci_no_trailzero(score_val)} and parameters: {params_str}. " f"Best is trial {best_trial_number} with value: {format_float_no_sci_no_trailzero(best_value)}.")
+        print(f"Trial {trial_number} finished with value: {format_float_no_sci_no_trailzero(score_val)} and parameters: {params_str}. " f"Best is trial {best_trial_number} with value: {format_float_no_sci_no_trailzero(best_value)}.")
 
-        new_rows.append({"number": trial_number, "value": score_val, "datetime_start": t_start.strftime("%Y-%m-%d %H:%M:%S.%f"), "datetime_complete": t_end.strftime("%Y-%m-%d %H:%M:%S.%f"), "duration": duration_str, "params_max_lr": lr, "params_model_combination": mc, "params_num_layer": nl, "system_attrs_grid_id": trial_number, "system_attrs_search_space": search_space_repr, "state": "COMPLETE"})
+        new_rows.append({"number": trial_number, "value": score_val,  "params_max_lr": lr, "params_model_combination": mc, "params_num_layer": nl, "system_attrs_grid_id": trial_number, "system_attrs_search_space": search_space_repr, "state": "COMPLETE"})
 
-    new_df = pd.DataFrame(new_rows, columns=["number", "value", "datetime_start", "datetime_complete", "duration", "params_max_lr", "params_model_combination", "params_num_layer", "system_attrs_grid_id", "system_attrs_search_space", "state"])
+    new_df = pd.DataFrame(new_rows, columns=["number", "value",  "params_max_lr", "params_model_combination", "params_num_layer", "system_attrs_grid_id", "system_attrs_search_space", "state"])
 
     save_csv_no_sci_append(path=result_path, new_df=new_df, append=True, dedup_cols=["number"])
 
