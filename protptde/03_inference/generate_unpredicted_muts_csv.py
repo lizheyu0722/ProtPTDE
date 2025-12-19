@@ -12,22 +12,7 @@ with open("../config/config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
 
-# estimate nosorted_result_list length
 def estimate_total_combinations(tmp_dict, mut_counts):
-    """
-    Estimates the total number of mutation combinations for a given mutation count.
-
-    This function calculates the total number of possible mutation combinations
-    by selecting position combinations and multiplying the number of possible
-    mutations at each selected position.
-
-    Args:
-        tmp_dict (dict): Dictionary mapping positions to lists of possible mutations
-        mut_counts (int): Number of mutation positions to combine
-
-    Returns:
-        int: Estimated total number of mutation combinations
-    """
     keys = list(tmp_dict.keys())
     est_total = 0
     for pos_comb in itertools.combinations(keys, mut_counts):
@@ -39,16 +24,6 @@ def estimate_total_combinations(tmp_dict, mut_counts):
 @click.command()
 @click.option("--mut_counts", required=True, type=int)
 def main(mut_counts):
-    """
-    Main function to generate mutation combinations and create sequence data for inference.
-
-    This function generates all possible or randomly sampled mutation combinations
-    based on the specified mutation count. It creates wild-type and mutant sequences
-    for each combination and saves the results to a CSV file for further analysis.
-
-    Args:
-        mut_counts (int): Number of mutations to include in each combination
-    """
     basic_data_name = config["basic_data_name"]
     max_mutations = config["inference"]["max_mutations"]
     wt_seq = str(list(SeqIO.parse("../features/wt/result.fasta", "fasta"))[0].seq)
@@ -57,7 +32,6 @@ def main(mut_counts):
     for i in data.index.str.split(","):
         tmp += i
 
-    # get dict (key: mut_pos, value: [wt_res + mut_pos + mut_res])
     train_tmp_dict = {}
     for value in list(set(tmp)):
         mut_pos = int(value[1:-1])
@@ -90,13 +64,11 @@ def main(mut_counts):
 
         nosorted_result_list = list(unique_combinations)
 
-    # sort mutations
     sorted_result_list = []
     for i in nosorted_result_list:
         tmp = sorted(i, key=lambda x: int(x[1:-1]))
         sorted_result_list.append(",".join(tmp))
 
-    # generate data csv
     data = pd.DataFrame(columns=["wt_seq", "mut_seq", "pred"], index=sorted_result_list)
     data["wt_seq"] = wt_seq
     for multi_mut_info in tqdm(sorted_result_list):
