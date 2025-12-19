@@ -12,24 +12,7 @@ with open("../config/config.json", "r", encoding="utf-8") as f:
 
 
 def stratified_sampling_for_mutation_data(mut_info_list):
-    """
-    Creates stratified sampling data for mutation analysis by extracting positions and generating binary vectors.
 
-    This function processes mutation information to extract mutation positions,creates
-    an index mapping, and generates binary vectors indicating which positions are
-    mutated for each mutation combination.
-
-    Args:
-        mut_info_list (list): List of mutation info strings, where each string contains
-                            single or multiple mutations (e.g., "A123B" or "A123B,C456D")
-
-    Returns:
-        tuple: A 3-tuple containing:
-            - sorted_mut_positions (list): Sorted list of mutation positions
-            - index_map (dict): Mapping from mutation position to vector index
-            - vectors_dict (dict): Mapping from mutation info to binary vector
-    """
-    # extract unique mutation positions
     positions = set()
     for multiple_mut_info in mut_info_list:
         for single_mut_info in multiple_mut_info.split(","):
@@ -37,7 +20,6 @@ def stratified_sampling_for_mutation_data(mut_info_list):
     sorted_mut_positions = sorted(positions)
     index_map = {mut_pos: index for index, mut_pos in enumerate(sorted_mut_positions)}
 
-    # generate mutation vectors
     vectors_dict = {}
     for multiple_mut_info in mut_info_list:
         vec = [0] * len(index_map)
@@ -51,12 +33,7 @@ def stratified_sampling_for_mutation_data(mut_info_list):
 @click.command()
 @click.option("--input_folder", required=True)
 def main(input_folder):
-    """
-    Fine-tunes a trained model and saves the best result.
 
-    Args:
-        input_folder (str): Folder with the best paremeters of trained model.
-    """
     basic_data_name = config["basic_data_name"]
     best_hyperparameters = config["best_hyperparameters"]
     finetune_parameter = config["final_model"]["finetune_parameter"]
@@ -74,20 +51,13 @@ def main(input_folder):
     batch_size = finetune_parameter["batch_size"]
     test_size = finetune_parameter["test_size"]
 
-    # torch.manual_seed(random_seed)
-    # torch.cuda.manual_seed_all(random_seed)
-    # torch.backends.cudnn.deterministic = True
-
     all_csv = pd.read_csv(f"../data/{basic_data_name}.csv", index_col=0)
 
-    # generate position mapping and mutation vectors
     mut_info_list = all_csv.index.tolist()
-    sorted_mut_positions, index_map, vectors = stratified_sampling_for_mutation_data(mut_info_list)
-    # print(f"Sorted positions: {sorted_mut_positions}")
-    # print(f"Index map: {index_map}")
+    _, _, vectors = stratified_sampling_for_mutation_data(mut_info_list)
+
     y_mut_pos = np.array([vectors[multiple_mut_info] for multiple_mut_info in mut_info_list])
 
-    # test data
     msss = MultilabelStratifiedShuffleSplit(n_splits=1, test_size=test_size, random_state=random_seed)
     for train_index, test_index in msss.split(y_mut_pos, y_mut_pos):
         train_csv = all_csv.iloc[train_index].copy()
@@ -106,9 +76,8 @@ def main(input_folder):
         input_path = input_folder
         output_path = input_path
 
-    # load pretrained SPIRED-Fitness model parameters
     model = torch.load(os.path.join(input_path, "train_best.pt"), map_location=lambda storage, loc: storage.cuda(device), weights_only=False)
-    # fixed parameters
+
     for name, param in model.named_parameters():
         if "finetune_coef" in name:
             param.requires_grad = True
@@ -117,7 +86,6 @@ def main(input_folder):
 
     optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, model.parameters()), lr=initial_lr)
 
-    # scheduler
     warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: min(1.0, epoch / warmup_epochs) * (max_lr / initial_lr))
     plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10, min_lr=min_lr)
 
@@ -126,7 +94,6 @@ def main(input_folder):
 
     for epoch in range(total_epochs):
 
-        # train
         model.train()
         epoch_loss = 0
         for wt_data, mut_data, label in train_loader:
@@ -143,7 +110,6 @@ def main(input_folder):
 
         train_loss = epoch_loss / len(train_loader)
 
-        # test
         preds = []
         trues = []
         with torch.no_grad():
@@ -156,7 +122,6 @@ def main(input_folder):
         test_corr = spearman_corr(torch.tensor(preds), torch.tensor(trues)).item()
         test_loss = torch.nn.functional.mse_loss(torch.tensor(preds), torch.tensor(trues)).item()
 
-        # save results
         loss.loc[f"{epoch}", "train_loss"] = train_loss
         loss.loc[f"{epoch}", "test_corr"] = test_corr
         loss.loc[f"{epoch}", "test_loss"] = test_loss
@@ -164,13 +129,11 @@ def main(input_folder):
         loss.to_csv(os.path.join(input_path, "finetune_loss.csv"))
         print(f"Epoch {epoch}: train_loss={train_loss:.4f}, test_corr={test_corr:.4f}, test_loss={test_loss:.4f}, learning_rate={optimizer.param_groups[0]['lr']:.6f}")
 
-        # scheduler
         if epoch < warmup_epochs:
             warmup_scheduler.step()
         else:
             plateau_scheduler.step(test_loss)
 
-        # check if test loss improved
         if test_loss < best_loss:
             best_loss = test_loss
             torch.save(model.state_dict(), os.path.join(output_path, "finetune_best.pth"))
