@@ -1,19 +1,9 @@
-import soft_rank_isotonic
 import numpy as np
+import soft_rank_isotonic
 from scipy import special
 
 
 def isotonic_l2(input_s, input_w=None):
-    """Solves an isotonic regression problem using PAV.
-
-    Formally, it solves argmin_{v_1 >= ... >= v_n} 0.5 ||v - (s-w)||^2.
-
-    Args:
-      input_s: input to isotonic regression, a 1d-array.
-      input_w: input to isotonic regression, a 1d-array.
-    Returns:
-      solution to the optimization problem.
-    """
     if input_w is None:
         input_w = np.arange(len(input_s))[::-1] + 1
     input_w = input_w.astype(input_s.dtype)
@@ -23,16 +13,6 @@ def isotonic_l2(input_s, input_w=None):
 
 
 def isotonic_kl(input_s, input_w=None):
-    """Solves isotonic optimization with KL divergence using PAV.
-
-    Formally, it solves argmin_{v_1 >= ... >= v_n} <e^{s-v}, 1> + <e^w, v>.
-
-    Args:
-      input_s: input to isotonic optimization, a 1d-array.
-      input_w: input to isotonic optimization, a 1d-array.
-    Returns:
-      solution to the optimization problem (same dtype as input_s).
-    """
     if input_w is None:
         input_w = np.arange(len(input_s))[::-1] + 1
     input_w = input_w.astype(input_s.dtype)
@@ -42,8 +22,6 @@ def isotonic_kl(input_s, input_w=None):
 
 
 def _partition(solution, eps=1e-9):
-    """Returns partition corresponding to solution."""
-    # pylint: disable=g-explicit-length-test
     if len(solution) == 0:
         return []
 
@@ -63,10 +41,8 @@ def _check_regularization(regularization):
 
 
 class _Differentiable(object):
-    """Base class for differentiable operators."""
 
     def jacobian(self):
-        """Computes Jacobian."""
         identity = np.eye(self.size)
         return np.array([self.jvp(identity[i]) for i in range(len(identity))]).T
 
@@ -75,20 +51,16 @@ class _Differentiable(object):
         raise NotImplementedError
 
     def compute(self):
-        """Computes the desired quantity."""
         raise NotImplementedError
 
     def jvp(self, vector):
-        """Computes Jacobian vector product."""
         raise NotImplementedError
 
     def vjp(self, vector):
-        """Computes vector Jacobian product."""
         raise NotImplementedError
 
 
 class Isotonic(_Differentiable):
-    """Isotonic optimization."""
 
     def __init__(self, input_s, input_w, regularization="l2"):
         self.input_s = input_s
@@ -142,14 +114,12 @@ class Isotonic(_Differentiable):
 
 
 def _inv_permutation(permutation):
-    """Returns inverse permutation of 'permutation'."""
     inv_permutation = np.zeros(len(permutation), dtype=int)
     inv_permutation[permutation] = np.arange(len(permutation))
     return inv_permutation
 
 
 class Projection(_Differentiable):
-    """Computes projection onto the permutahedron P(w)."""
 
     def __init__(self, input_theta, input_w=None, regularization="l2"):
         if input_w is None:
@@ -198,7 +168,6 @@ def _check_direction(direction):
 
 
 class SoftRank(_Differentiable):
-    """Soft ranking."""
 
     def __init__(self, values, direction="ASCENDING", regularization_strength=1.0, regularization="l2"):
         self.values = np.asarray(values)
@@ -238,7 +207,6 @@ class SoftRank(_Differentiable):
 
 
 class SoftSort(_Differentiable):
-    """Soft sorting."""
 
     def __init__(self, values, direction="ASCENDING", regularization_strength=1.0, regularization="l2"):
         self.values = np.asarray(values)
@@ -267,7 +235,6 @@ class SoftSort(_Differentiable):
         self.isotonic_ = Isotonic(input_w, s, regularization=self.regularization)
         res = self.isotonic_.compute()
 
-        # We set s as the first argument as we want the derivatives w.r.t. s.
         self.isotonic_.s = s
         return self.sign * (input_w - res)
 
@@ -282,7 +249,6 @@ class SoftSort(_Differentiable):
 
 
 class Sort(_Differentiable):
-    """Hard sorting."""
 
     def __init__(self, values, direction="ASCENDING"):
         _check_direction(direction)
@@ -312,67 +278,20 @@ class Sort(_Differentiable):
         return vector[inv_permutation]
 
 
-# Small utility functions for the case when we just want the forward
-# computation.
-
-
 def soft_rank(values, direction="ASCENDING", regularization_strength=1.0, regularization="l2"):
-    r"""Soft rank the given values.
-
-    The regularization strength determines how close are the returned values
-    to the actual ranks.
-
-    Args:
-      values: A 1d-array holding the numbers to be ranked.
-      direction: Either 'ASCENDING' or 'DESCENDING'.
-      regularization_strength: The regularization strength to be used. The smaller
-      this number, the closer the values to the true ranks.
-      regularization: Which regularization method to use. It
-        must be set to one of ("l2", "kl", "log_kl").
-    Returns:
-      A 1d-array, soft-ranked.
-    """
     return SoftRank(values, regularization_strength=regularization_strength, direction=direction, regularization=regularization).compute()
 
 
 def soft_sort(values, direction="ASCENDING", regularization_strength=1.0, regularization="l2"):
-    r"""Soft sort the given values.
-
-    Args:
-      values: A 1d-array holding the numbers to be sorted.
-      direction: Either 'ASCENDING' or 'DESCENDING'.
-      regularization_strength: The regularization strength to be used. The smaller
-      this number, the closer the values to the true sorted values.
-      regularization: Which regularization method to use. It
-        must be set to one of ("l2", "log_kl").
-    Returns:
-      A 1d-array, soft-sorted.
-    """
     return SoftSort(values, regularization_strength=regularization_strength, direction=direction, regularization=regularization).compute()
 
 
 def sort(values, direction="ASCENDING"):
-    r"""Sort the given values.
-
-    Args:
-      values: A 1d-array holding the numbers to be sorted.
-      direction: Either 'ASCENDING' or 'DESCENDING'.
-    Returns:
-      A 1d-array, sorted.
-    """
     return Sort(values, direction=direction).compute()
 
 
 def rank(values, direction="ASCENDING"):
-    r"""Rank the given values.
-
-    Args:
-      values: A 1d-array holding the numbers to be ranked.
-      direction: Either 'ASCENDING' or 'DESCENDING'.
-    Returns:
-      A 1d-array, ranked.
-    """
     permutation = np.argsort(values)
     if direction == "DESCENDING":
         permutation = permutation[::-1]
-    return _inv_permutation(permutation) + 1  # We use 1-based indexing.
+    return _inv_permutation(permutation) + 1
