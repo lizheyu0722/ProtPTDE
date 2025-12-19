@@ -1,27 +1,21 @@
 import os
+import uuid
 import json
 import click
 import torch
 import itertools
 import numpy as np
 import pandas as pd
-import uuid
 
-from iterstrat.ml_stratifiers import MultilabelStratifiedShuffleSplit, MultilabelStratifiedKFold
 from model import BatchData, ModelUnion, to_gpu, spearman_loss, spearman_corr
+from iterstrat.ml_stratifiers import MultilabelStratifiedShuffleSplit, MultilabelStratifiedKFold
 
-# ---------------------------
-# Config
-# ---------------------------
+
 with open("../config/config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
 
-# ---------------------------
-# Helpers: number formatting
-# ---------------------------
 def format_float_no_sci_no_trailzero(x):
-    """Format numbers without scientific notation and trailing zeros."""
     if isinstance(x, (float, np.floating, int, np.integer)):
         s = f"{float(x):.12f}"
         if "." in s:
@@ -30,8 +24,7 @@ def format_float_no_sci_no_trailzero(x):
     return str(x)
 
 
-def df_float_to_str(df: pd.DataFrame) -> pd.DataFrame:
-    """Convert numeric columns to strings using the formatter above."""
+def df_float_to_str(df: pd.DataFrame):
     out = df.copy()
     for col in out.columns:
         if pd.api.types.is_numeric_dtype(out[col]):
@@ -40,7 +33,6 @@ def df_float_to_str(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def save_csv_no_sci_append(path: str, new_df: pd.DataFrame, append: bool, dedup_cols=None):
-    """Append-or-write CSV with formatted numbers and optional de-duplication."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if append and os.path.exists(path):
         old_df = pd.read_csv(path)
@@ -52,27 +44,7 @@ def save_csv_no_sci_append(path: str, new_df: pd.DataFrame, append: bool, dedup_
         df_float_to_str(new_df).to_csv(path, index=False)
 
 
-# ---------------------------
-# Data prep
-# ---------------------------
 def stratified_sampling_for_mutation_data(mut_info_list):
-    """
-    Creates stratified sampling data for mutation analysis by extracting positions and generating binary vectors.
-
-    This function processes mutation information to extract mutation positions,creates
-    an index mapping, and generates binary vectors indicating which positions are
-    mutated for each mutation combination.
-
-    Args:
-        mut_info_list (list): List of mutation info strings, where each string contains
-                            single or multiple mutations (e.g., "A123B" or "A123B,C456D")
-
-    Returns:
-        tuple: A 3-tuple containing:
-            - sorted_mut_positions (list): Sorted list of mutation positions
-            - index_map (dict): Mapping from mutation position to vector index
-            - vectors_dict (dict): Mapping from mutation info to binary vector
-    """
     positions = set()
     for multiple_mut_info in mut_info_list:
         for single_mut_info in multiple_mut_info.split(","):
@@ -88,25 +60,7 @@ def stratified_sampling_for_mutation_data(mut_info_list):
     return sorted_mut_positions, index_map, vectors_dict
 
 
-# ---------------------------
-# Objective
-# ---------------------------
 def objective(trial, random_seed):
-    """
-    Optuna objective function for hyperparameter optimization with cross-validation.
-
-    This function performs hyperparameter search using Optuna trials, including model
-    combination selection, layer count, and maximum learning rate optimization. It uses
-    multilabel stratified cross-validation to evaluate model performance and returns
-    a score based on mean test correlation minus standard deviation for robust optimization.
-
-    Args:
-        trial: Optuna-like trial object providing suggest_* methods
-        random_seed (int): Random seed for reproducible results
-
-    Returns:
-        float: Optimization score (mean test correlation - std deviation)
-    """
     basic_data_name = config["basic_data_name"]
     model_number = config["cross_validation"]["model_number"]
     training_parameter = config["cross_validation"]["training_parameter"]
@@ -237,22 +191,9 @@ def objective(trial, random_seed):
     return mean_corr - std_corr
 
 
-# ---------------------------
-# Main (seed-aware skipping)
-# ---------------------------
 @click.command()
 @click.option("--random_seed", type=int, required=True)
 def main(random_seed):
-    """
-    Main function to run hyperparameter optimization using Optuna with grid search.
-
-    This function sets up the search space for model combinations, layer counts, and
-    maximum learning rates, then performs grid search optimization using Optuna.
-    Results are saved to CSV files for analysis.
-
-    Args:
-        random_seed (int): Random seed for reproducible optimization results
-    """
     model_number = config["cross_validation"]["model_number"]
     hyper_search = config["cross_validation"]["hyperparameter_search"]
 
@@ -290,7 +231,6 @@ def main(random_seed):
     else:
         next_number_base = 0
 
-    # Optuna-like "study created" log
     study_name = f"no-name-{uuid.uuid4()}"
     print(f"A new study created in memory with name: {study_name}", flush=True)
 
@@ -324,7 +264,6 @@ def main(random_seed):
 
         trial_number = next_number_base + i
 
-        # Update best and log trial result (Optuna-like)
         if (best_value is None) or (score_val > best_value):
             best_value = score_val
             best_trial_number = trial_number
