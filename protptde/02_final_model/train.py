@@ -18,21 +18,18 @@ def stratified_sampling_for_mutation_data(mut_info_list):
             positions.add(int(single_mut_info[1:-1]))
     sorted_mut_positions = sorted(positions)
     index_map = {mut_pos: index for index, mut_pos in enumerate(sorted_mut_positions)}
-
     vectors_dict = {}
     for multiple_mut_info in mut_info_list:
         vec = [0] * len(index_map)
         for single_mut_info in multiple_mut_info.split(","):
             vec[index_map[int(single_mut_info[1:-1])]] = 1
         vectors_dict[multiple_mut_info] = vec
-
     return sorted_mut_positions, index_map, vectors_dict
 
 
 @click.command()
 @click.option("--random_seed", type=int, required=True)
-@click.option("--output_dir", type=str)
-def main(random_seed, output_dir):
+def main(random_seed):
     basic_data_name = config["basic_data_name"]
     best_hyperparameters = config["best_hyperparameters"]
     train_parameter = config["final_model"]["train_parameter"]
@@ -50,7 +47,6 @@ def main(random_seed, output_dir):
     test_size = train_parameter["test_size"]
 
     all_csv = pd.read_csv(f"../data/{basic_data_name}.csv", index_col=0)
-
     mut_info_list = all_csv.index.tolist()
     _, _, vectors = stratified_sampling_for_mutation_data(mut_info_list)
     y_mut_pos = np.array([vectors[multiple_mut_info] for multiple_mut_info in mut_info_list])
@@ -60,26 +56,20 @@ def main(random_seed, output_dir):
         train_csv = all_csv.iloc[train_index].copy()
         test_csv = all_csv.iloc[test_index].copy()
 
-    if output_dir == "results":
-        file = os.path.join(output_dir, f"{random_seed}")
-    else:
-        file = output_dir
+    file = f"results/{random_seed}"
     os.makedirs(file, exist_ok=True)
 
     train_dataset = BatchData(train_csv, selected_models)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-
     test_dataset = BatchData(test_csv, selected_models)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = ModelUnion(num_layer, selected_models).to(device)
-
     for name, param in model.named_parameters():
         if "finetune_coef" in name:
             param.requires_grad = False
 
     optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, model.parameters()), lr=initial_lr)
-
     warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: min(1.0, epoch / warmup_epochs) * (max_lr / initial_lr))
     plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10, min_lr=min_lr)
 
@@ -101,7 +91,6 @@ def main(random_seed, output_dir):
             optimizer.step()
 
             epoch_loss += train_loss.item()
-
         train_loss = epoch_loss / len(train_loader)
 
         preds = []
