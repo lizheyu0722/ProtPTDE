@@ -83,7 +83,6 @@ def objective(trial, random_seed):
     cv_shuffle = training_parameter["shuffle"]
 
     all_csv = pd.read_csv(f"../data/{basic_data_name}.csv", index_col=0)
-
     mut_info_list = all_csv.index.tolist()
     _, _, vectors = stratified_sampling_for_mutation_data(mut_info_list)
     y_mut_pos = np.array([vectors[multiple_mut_info] for multiple_mut_info in mut_info_list])
@@ -99,38 +98,32 @@ def objective(trial, random_seed):
     k_fold_test_corr = []
 
     mskf = MultilabelStratifiedKFold(n_splits=k_fold, shuffle=cv_shuffle, random_state=random_seed)
-
     for k_fold_index, (train_index, validation_index) in enumerate(mskf.split(y_mut_pos[train_validation_index], y_mut_pos[train_validation_index])):
         train_csv = train_validation_csv.iloc[train_index].copy()
         validation_csv = train_validation_csv.iloc[validation_index].copy()
-
         train_dataset = BatchData(train_csv, selected_models)
         train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-
         validation_dataset = BatchData(validation_csv, selected_models)
         validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=batch_size, shuffle=True)
-
         test_dataset = BatchData(test_csv, selected_models)
         test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
         model = ModelUnion(num_layer, selected_models).to(device)
-
         for name, param in model.named_parameters():
             if "finetune_coef" in name:
                 param.requires_grad = False
 
         optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, model.parameters()), lr=initial_lr)
-
         warmup_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: min(1.0, epoch / warmup_epochs) * (max_lr / initial_lr))
         plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10, min_lr=min_lr)
 
         best_loss = float("inf")
         best_corr = float("-inf")
-        loss_df = pd.DataFrame()
+        loss = pd.DataFrame()
 
         for epoch in range(total_epochs):
             model.train()
-            epoch_loss_total = 0
+            epoch_loss = 0
             for wt_data, mut_data, label in train_loader:
                 wt_data, mut_data, label = to_gpu(wt_data, device), to_gpu(mut_data, device), to_gpu(label, device)
                 optimizer.zero_grad()
@@ -139,9 +132,8 @@ def objective(trial, random_seed):
                 train_loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), norm_type=2, max_norm=10, error_if_nonfinite=True)
                 optimizer.step()
-                epoch_loss_total += train_loss.item()
-
-            train_loss_val = epoch_loss_total / len(train_loader)
+                epoch_loss += train_loss.item()
+            train_loss = epoch_loss / len(train_loader)
 
             model.eval()
             preds = []
@@ -152,7 +144,7 @@ def objective(trial, random_seed):
                     pred = model(wt_data, mut_data)
                     preds += pred.detach().cpu().tolist()
                     trues += label.detach().cpu().tolist()
-            validation_loss_val = -spearman_corr(torch.tensor(preds), torch.tensor(trues)).item()
+            validation_loss = -spearman_corr(torch.tensor(preds), torch.tensor(trues)).item()
 
             preds = []
             trues = []
@@ -162,32 +154,27 @@ def objective(trial, random_seed):
                     pred = model(wt_data, mut_data)
                     preds += pred.detach().cpu().tolist()
                     trues += label.detach().cpu().tolist()
-            test_corr_val = spearman_corr(torch.tensor(preds), torch.tensor(trues)).item()
+            test_corr = spearman_corr(torch.tensor(preds), torch.tensor(trues)).item()
 
-            loss_df.loc[f"{epoch}", "train_loss"] = train_loss_val
-            loss_df.loc[f"{epoch}", "validation_loss"] = validation_loss_val
-            loss_df.loc[f"{epoch}", "test_corr"] = test_corr_val
-            loss_df.loc[f"{epoch}", "learning_rate"] = optimizer.param_groups[0]["lr"]
+            loss.loc[f"{epoch}", "train_loss"] = train_loss
+            loss.loc[f"{epoch}", "validation_loss"] = validation_loss
+            loss.loc[f"{epoch}", "test_corr"] = test_corr
+            loss.loc[f"{epoch}", "learning_rate"] = optimizer.param_groups[0]["lr"]
 
             if epoch < warmup_epochs:
                 warmup_scheduler.step()
             else:
-                plateau_scheduler.step(validation_loss_val)
-
-            if validation_loss_val < best_loss:
-                best_loss = validation_loss_val
-                best_corr = test_corr_val
+                plateau_scheduler.step(validation_loss)
+            if validation_loss < best_loss:
+                best_loss = validation_loss
+                best_corr = test_corr
             elif optimizer.param_groups[0]["lr"] <= min_lr and epoch > warmup_epochs:
                 print(f"[{models_name} | num_layer={num_layer} | max_lr={format_float_no_sci_no_trailzero(max_lr)} | seed={random_seed} | fold={k_fold_index}] " f"Stopping at epoch {epoch} due to no improvement in validation loss.", flush=True)
                 break
 
-        save_csv_no_sci_append(path=f"{file}/k_fold_index-{k_fold_index}_loss.csv", new_df=loss_df.reset_index().rename(columns={"index": "epoch"}), append=False)
-
+        save_csv_no_sci_append(path=f"{file}/k_fold_index-{k_fold_index}_loss.csv", new_df=loss.reset_index().rename(columns={"index": "epoch"}), append=False)
         k_fold_test_corr.append(best_corr)
-
-    mean_corr = float(pd.Series(k_fold_test_corr).mean())
-    std_corr = float(pd.Series(k_fold_test_corr).std())
-    return mean_corr - std_corr
+    return float(pd.Series(k_fold_test_corr).mean()) - float(pd.Series(k_fold_test_corr).std())
 
 
 @click.command()
@@ -260,7 +247,6 @@ def main(random_seed):
                 raise ValueError(f"Unexpected int param: {name}")
 
         score_val = objective(DummyTrial(mc, nl, lr), random_seed)
-
         trial_number = next_number_base + i
 
         if (best_value is None) or (score_val > best_value):
@@ -269,27 +255,7 @@ def main(random_seed):
         params_str = f"{{'model_combination': '{mc}', 'num_layer': {nl}, 'max_lr': {format_float_no_sci_no_trailzero(lr)}}}"
         print(f"Trial {trial_number} finished with value: {format_float_no_sci_no_trailzero(score_val)} and parameters: {params_str}. " f"Best is trial {best_trial_number} with value: {format_float_no_sci_no_trailzero(best_value)}.", flush=True)
 
-        row_df = pd.DataFrame(
-            [
-                {
-                    "number": trial_number,
-                    "value": score_val,
-                    "params_max_lr": lr,
-                    "params_model_combination": mc,
-                    "params_num_layer": nl,
-                    "state": "COMPLETE",
-                }
-            ],
-            columns=[
-                "number",
-                "value",
-                "params_max_lr",
-                "params_model_combination",
-                "params_num_layer",
-                "state",
-            ],
-        )
-
+        row_df = pd.DataFrame([{"number": trial_number, "value": score_val, "params_max_lr": lr, "params_model_combination": mc, "params_num_layer": nl, "state": "COMPLETE"}], columns=["number", "value", "params_max_lr", "params_model_combination", "params_num_layer", "state"])
         save_csv_no_sci_append(path=result_path, new_df=row_df, append=True, dedup_cols=["number"])
 
 
