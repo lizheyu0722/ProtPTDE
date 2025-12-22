@@ -33,13 +33,10 @@ class DownStreamModel(torch.nn.Module):
         embedding_output_dim = self.config["single_model_embedding_output_dim"]
         for model_name in self.selected_models:
             input_dim = self.config["all_model"][model_name]["shape"]
-
             self.model_transforms[model_name] = torch.nn.Sequential(torch.nn.LayerNorm(input_dim), torch.nn.Linear(input_dim, embedding_output_dim), torch.nn.LeakyReLU())
 
-        total_output_dim = len(self.selected_models) * embedding_output_dim
-
         layers = []
-        input_dim = total_output_dim
+        input_dim = len(self.selected_models) * embedding_output_dim
         for _ in range(num_layer):
             layers.append(torch.nn.Linear(input_dim, 64))
             layers.append(torch.nn.LeakyReLU())
