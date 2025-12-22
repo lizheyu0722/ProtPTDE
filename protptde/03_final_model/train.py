@@ -46,7 +46,7 @@ def main(random_seed):
     batch_size = train_parameter["batch_size"]
     test_size = train_parameter["test_size"]
 
-    all_csv = pd.read_csv(f"../data/{basic_data_name}.csv", index_col=0)
+    all_csv = pd.read_csv(f"../01_data_processing/{basic_data_name}.csv", index_col=0)
     mut_info_list = all_csv.index.tolist()
     _, _, vectors = stratified_sampling_for_mutation_data(mut_info_list)
     y_mut_pos = np.array([vectors[multiple_mut_info] for multiple_mut_info in mut_info_list])

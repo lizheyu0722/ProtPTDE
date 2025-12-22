@@ -23,14 +23,6 @@ def format_float_no_sci_no_trailzero(x):
     return str(x)
 
 
-def df_float_to_str(df):
-    out = df.copy()
-    for col in out.columns:
-        if pd.api.types.is_numeric_dtype(out[col]):
-            out[col] = out[col].apply(lambda v: format_float_no_sci_no_trailzero(v))
-    return out
-
-
 def save_csv_no_sci_append(path, new_df, append, dedup_cols=None):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if append and os.path.exists(path):
@@ -38,9 +30,9 @@ def save_csv_no_sci_append(path, new_df, append, dedup_cols=None):
         merged = pd.concat([old_df, new_df], ignore_index=True)
         if dedup_cols:
             merged = merged.drop_duplicates(subset=dedup_cols, keep="first")
-        df_float_to_str(merged).to_csv(path, index=False)
+        merged.to_csv(path, index=False)
     else:
-        df_float_to_str(new_df).to_csv(path, index=False)
+        new_df.to_csv(path, index=False)
 
 
 def stratified_sampling_for_mutation_data(mut_info_list):
@@ -82,7 +74,7 @@ def objective(trial, random_seed):
     k_fold = training_parameter["k_fold"]
     cv_shuffle = training_parameter["shuffle"]
 
-    all_csv = pd.read_csv(f"../data/{basic_data_name}.csv", index_col=0)
+    all_csv = pd.read_csv(f"../01_data_processing/{basic_data_name}.csv", index_col=0)
     mut_info_list = all_csv.index.tolist()
     _, _, vectors = stratified_sampling_for_mutation_data(mut_info_list)
     y_mut_pos = np.array([vectors[multiple_mut_info] for multiple_mut_info in mut_info_list])

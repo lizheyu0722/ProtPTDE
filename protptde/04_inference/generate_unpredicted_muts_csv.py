@@ -27,7 +27,7 @@ def main(mut_counts):
     basic_data_name = config["basic_data_name"]
     max_mutations = config["inference"]["max_mutations"]
     wt_seq = str(list(SeqIO.parse("../features/wt/result.fasta", "fasta"))[0].seq)
-    data = pd.read_csv(f"../data/{basic_data_name}.csv", index_col=0)
+    data = pd.read_csv(f"../01_data_processing/{basic_data_name}.csv", index_col=0)
     tmp = []
     for i in data.index.str.split(","):
         tmp += i
