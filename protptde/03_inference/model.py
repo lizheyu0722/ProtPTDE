@@ -5,21 +5,6 @@ with open("../config/config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
 
-def get_mutation_positions_from_sequences(wt_seq, mut_seq):
-    if not isinstance(wt_seq, list):
-        wt_seq = [wt_seq]
-        mut_seq = [mut_seq]
-    mut_pos_list = []
-    for wt, mut in zip(wt_seq, mut_seq):
-        assert len(wt) == len(mut), f"Sequence length mismatch: WT={len(wt)}, MUT={len(mut)}"
-        mut_pos = torch.zeros(len(wt), dtype=torch.int)
-        for i, (wt_aa, mut_aa) in enumerate(zip(wt, mut)):
-            if wt_aa != mut_aa:
-                mut_pos[i] = 1
-        mut_pos_list.append(mut_pos)
-    return torch.stack(mut_pos_list)
-
-
 def to_gpu(obj, device):
     if isinstance(obj, torch.Tensor):
         try:
@@ -88,9 +73,12 @@ class ModelUnion(torch.nn.Module):
 
         wt_value = self.down_stream_model(wt_embeddings)
         mut_value = self.down_stream_model(mut_embeddings)
-        mut_pos = get_mutation_positions_from_sequences(wt_data["seq"], mut_data["seq"])
+
+        wt_seq, mut_seq = wt_data["seq"], mut_data["seq"]
+        if not isinstance(wt_seq, list):
+            wt_seq, mut_seq = [wt_seq], [mut_seq]
         device = mut_value.device
-        mut_pos = mut_pos.to(device)
+        mut_pos = torch.stack([torch.tensor([int(wt_aa != mut_aa) for wt_aa, mut_aa in zip(wt_item, mut_item)], dtype=torch.int, device=device) for wt_item, mut_item in zip(wt_seq, mut_seq)])
 
         delta_value = (mut_value - wt_value).squeeze(-1) * mut_pos
         delta_value = delta_value.sum(1)
